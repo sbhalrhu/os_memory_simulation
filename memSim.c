@@ -1,4 +1,6 @@
-
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 
 #define PAGE_TABLE_ENTRIES 256
 #define TLB_ENTRIES 16
@@ -72,15 +74,84 @@
  *
  */
 int main(int argc, char *argv[]) {
+    if (argc < 2 || argc > 4) {
+        printf("Usage: %s <reference-sequence-file.txt> [frame_count] [PRA]\n", argv[0]);
+        return 1;
+    }
 
+    int frame_count = 256;
+    const char *pra = "fifo";
+
+    if (argc == 3) {
+        if (strcmp(argv[2], "fifo") == 0 || strcmp(argv[2], "lru") == 0 ||
+            strcmp(argv[2], "opt") == 0) {
+            pra = argv[2];
+        } else {
+            frame_count = atoi(argv[2]);
+        }
+    } else if (argc == 4) {
+        frame_count = atoi(argv[2]);
+        pra = argv[3];
+    }
+
+    (void)frame_count;
+    (void)pra;
+
+    return 0;
 }
 
 /* 
  * Parse the file provided in command line argv[1]
  * 
  */
-int parse_file(char *filename) {
+int parse_file(const char *filename, int **addresses, size_t *address_count) {
+    FILE *fp = fopen(filename, "r");
+    size_t capacity = 128;
+    size_t count = 0;
+    int *list = malloc(capacity * sizeof(*list));
+    int logical_address;
 
+    if (fp == NULL) {
+        perror("Could not open reference sequence file");
+        return 1;
+    }
+
+    if (list == NULL) {
+        perror("Could not allocate address list");
+        fclose(fp);
+        return 1;
+    }
+
+    while (fscanf(fp, "%d", &logical_address) == 1) {
+        if (count == capacity) {
+            capacity *= 2;
+            int *resized_list = realloc(list, capacity * sizeof(*list));
+
+            if (resized_list == NULL) {
+                perror("Could not expand address list");
+                free(list);
+                fclose(fp);
+                return 1;
+            }
+
+            list = resized_list;
+        }
+
+        list[count] = logical_address;
+        count++;
+    }
+
+    if (!feof(fp)) {
+        fprintf(stderr, "Invalid address in reference sequence file: %s\n", filename);
+        free(list);
+        fclose(fp);
+        return 1;
+    }
+
+    fclose(fp);
+    *addresses = list;
+    *address_count = count;
+    return 0;
 }
 
 
@@ -106,12 +177,3 @@ hexdump(const void *data, int size)
     }
 }
 
-snprintf(buf, sizeof(buf), "%.2x", byte_array[i]);
-
-char a[] = "Hello World";
-printf("%s", a);
-
-char str[50];
-scanf("%49s", str);
-printf("Entered String: %s", str);
-/* 49 is the number of chars, an 50 is the size of the array INCLUDING the null terminator*/
