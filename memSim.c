@@ -94,8 +94,11 @@ int main(int argc, char *argv[]) {
         pra = argv[3];
     }
 
-    (void)frame_count;
-    (void)pra;
+    int * addresses;
+    size_t num_addresses = 0;
+    int parse_file(argv[1], &addresses, &num_addresses);
+
+
 
     return 0;
 }
