@@ -75,28 +75,44 @@
  */
 int main(int argc, char *argv[]) {
     if (argc < 2 || argc > 4) {
-        printf("Usage: %s <reference-sequence-file.txt> [frame_count] [PRA]\n", argv[0]);
+        printf("Usage: ./memSim <reference-sequence-file.txt> [frame_count] [PRA]\n");
         return 1;
     }
 
+    /*default values:
+    256 frames (also the max value) 
+    FIFO replacement (must be fifo, lru, or opt)
+    */
+   
     int frame_count = 256;
     const char *pra = "fifo";
 
-    if (argc == 3) {
-        if (strcmp(argv[2], "fifo") == 0 || strcmp(argv[2], "lru") == 0 ||
-            strcmp(argv[2], "opt") == 0) {
-            pra = argv[2];
-        } else {
+    /*Frame count and PRA are optional arguments. 
+      Defaults are already set.
+      Account for three cases: 
+      1. no frame count and no PRA [argc = 2]
+      2. no PRA [argc = 3]
+      3. both frame count and PRA [argc = 4] 
+      Case 1 already accounted for by setting defaults.
+    */
+    if (argc > 2) {
+        if (atoi(argv[2]) > 0 && atoi(argv[2]) <= 256) {
             frame_count = atoi(argv[2]);
         }
-    } else if (argc == 4) {
-        frame_count = atoi(argv[2]);
-        pra = argv[3];
     }
+    if (argc == 4) {
+        if (strcmp(argv[3], "fifo") == 0 || strcmp(argv[3], "lru") == 0 ||
+            strcmp(argv[3], "opt") == 0) {
+            pra = argv[3];
+        } 
+    }
+
+
+    
 
     int * addresses;
     size_t num_addresses = 0;
-    int parse_file(argv[1], &addresses, &num_addresses);
+    int parsing_status = parse_file(argv[1], &addresses, &num_addresses);
 
 
 
@@ -144,6 +160,9 @@ int parse_file(const char *filename, int **addresses, size_t *address_count) {
         count++;
     }
 
+    /*If the while loop terminates before the end of the file is reached, 
+      report an error and free list's memory.
+    */
     if (!feof(fp)) {
         fprintf(stderr, "Invalid address in reference sequence file: %s\n", filename);
         free(list);
@@ -160,11 +179,10 @@ int parse_file(const char *filename, int **addresses, size_t *address_count) {
 
 
 /* Function found online to 'dump a whole memory region on the screen'.
- *
- */
-// Source - https://stackoverflow.com/a/2566664
-// Posted by quinmars
-// Retrieved 2026-10-29, License - CC BY-SA 2.5
+ 
+Source - https://stackoverflow.com/a/2566664
+Posted by quinmars
+Retrieved 2026-10-29, License - CC BY-SA 2.5
 
 
 void
@@ -179,4 +197,6 @@ hexdump(const void *data, int size)
         byte++;
     }
 }
+
+*/
 
