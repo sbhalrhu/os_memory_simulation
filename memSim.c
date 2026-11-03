@@ -170,6 +170,13 @@ int main(int argc, char *argv[]) {
         free(frame_to_page);
         return 1;
     }
+
+    int tlb_next_slot = 0;
+    int tlb_hits = 0;
+    int tlb_misses = 0;
+
+
+
     int next_free_frame = 0;
     int page_faults = 0;
 
@@ -179,49 +186,66 @@ int main(int argc, char *argv[]) {
         int page_num = addresses[i]/256;
         int offset = addresses[i]%256;
         int frame_num;
-        
-        if (page_table[page_num].load_bit == 0){
-            if (next_free_frame >= frame_count) {
-                printf("num frames exceeded\n");
-                fclose(fp);
-                free(addresses);
-                free(physical_memory);
+
+        int tlb_hit = 0; 
+        //tlb check first
+        for (int b = 0; b < 16; b++){
+            if (TLB[b].valid && TLB[b].page_num == page_num){
+                tlb_hits++;
+                tlb_hit = 1;
+                frame_num = TLB[b].frame_num;
+                break;
+            }
+        }
+        if (tlb_hit != 1){
+            tlb_misses++;
+            //page fault
+            if (page_table[page_num].load_bit == 0){
+                if (next_free_frame >= frame_count) {
+                    printf("num frames exceeded\n");
+                    fclose(fp);
+                    free(addresses);
+                    free(physical_memory);
+                        free(frame_to_page);
+                    return 1;
+                }
+                frame_num = next_free_frame;
+
+                if (fseek(fp, (long)page_num * PAGE_SIZE_BYTES, SEEK_SET) != 0) {
+                    printf("Could not seek in backing store");
+                    fclose(fp);
+                    free(addresses);
+                    free(physical_memory);
                     free(frame_to_page);
-            return 1;
+                    return 1;
+                }
+
+                size_t bytes_read = fread(physical_memory + (frame_num * FRAME_SIZE_BYTES), 1, PAGE_SIZE_BYTES, fp);
+
+                if (bytes_read != PAGE_SIZE_BYTES) {
+                    printf("Could not read full page from backing store\n");
+                    fclose(fp);
+                    free(addresses);
+                    free(physical_memory);
+                    free(frame_to_page);
+                    return 1;
+                }
+                
+                page_table[page_num].load_bit = 1;
+                page_table[page_num].frame_num = frame_num;
+                frame_to_page[frame_num] = page_num;
+
+                next_free_frame++;
+                page_faults++; 
             }
-            frame_num = next_free_frame;
-
-            if (fseek(fp, (long)page_num * PAGE_SIZE_BYTES, SEEK_SET) != 0) {
-                printf("Could not seek in backing store");
-                fclose(fp);
-                free(addresses);
-                free(physical_memory);
-                free(frame_to_page);
-                return 1;
+            else {
+                frame_num = page_table[page_num].frame_num;
             }
-
-            size_t bytes_read = fread(physical_memory + (frame_num * FRAME_SIZE_BYTES), 1, PAGE_SIZE_BYTES, fp);
-
-            if (bytes_read != PAGE_SIZE_BYTES) {
-                printf("Could not read full page from backing store\n");
-                fclose(fp);
-                free(addresses);
-                free(physical_memory);
-                free(frame_to_page);
-                return 1;
-            }
-            
-            page_table[page_num].load_bit = 1;
-            page_table[page_num].frame_num = frame_num;
-            frame_to_page[frame_num] = page_num;
-
-            next_free_frame++;
-            page_faults++; 
+            TLB[tlb_next_slot].valid = 1;
+            TLB[tlb_next_slot].page_num = page_num;
+            TLB[tlb_next_slot].frame_num = frame_num;
+            tlb_next_slot = (tlb_next_slot + 1) % TLB_ENTRIES;
         }
-        else {
-            frame_num = page_table[page_num].frame_num;
-        }
-
         int physical_index = (frame_num * FRAME_SIZE_BYTES) + offset;
         signed char value = (signed char)physical_memory[physical_index];
 
