@@ -85,7 +85,7 @@ struct TLB_entry{
     int frame_num;
 };
 
-int parse_file(const char *filename, int **addresses, size_t *address_count);
+int parse_file(const char *filename, int **addresses, int *address_count);
 
 
 int main(int argc, char *argv[]) {
@@ -126,7 +126,7 @@ int main(int argc, char *argv[]) {
     
 
     int * addresses;
-    size_t num_addresses = 0;
+    int num_addresses = 0;
     int parsing_status = parse_file(argv[1], &addresses, &num_addresses);
     if (parsing_status != 0){
         printf("couldn't parse file\n");
@@ -161,6 +161,75 @@ int main(int argc, char *argv[]) {
         frame_to_page[i] = -1;
     }
 
+    //virtual memory startup
+    FILE *fp = fopen("BACKING_STORE-1.bin", "rb");
+    if (fp == NULL) {
+        printf("Could not open backing store");
+        free(addresses);
+        free(physical_memory);
+        free(frame_to_page);
+        return 1;
+    }
+    int next_free_frame = 0;
+    int page_faults = 0;
+
+
+    //actual loop to find memory from addresses
+    for (int i = 0; i < num_addresses; i++){
+        int page_num = addresses[i]/256;
+        int offset = addresses[i]%256;
+        int frame_num;
+        
+        if (page_table[page_num].load_bit == 0){
+            if (next_free_frame >= frame_count) {
+                printf("num frames exceeded\n");
+                fclose(fp);
+                free(addresses);
+                free(physical_memory);
+                    free(frame_to_page);
+            return 1;
+            }
+            frame_num = next_free_frame;
+
+            if (fseek(fp, (long)page_num * PAGE_SIZE_BYTES, SEEK_SET) != 0) {
+                printf("Could not seek in backing store");
+                fclose(fp);
+                free(addresses);
+                free(physical_memory);
+                free(frame_to_page);
+                return 1;
+            }
+
+            size_t bytes_read = fread(physical_memory + (frame_num * FRAME_SIZE_BYTES), 1, PAGE_SIZE_BYTES, fp);
+
+            if (bytes_read != PAGE_SIZE_BYTES) {
+                printf("Could not read full page from backing store\n");
+                fclose(fp);
+                free(addresses);
+                free(physical_memory);
+                free(frame_to_page);
+                return 1;
+            }
+            
+            page_table[page_num].load_bit = 1;
+            page_table[page_num].frame_num = frame_num;
+            frame_to_page[frame_num] = page_num;
+
+            next_free_frame++;
+            page_faults++; 
+        }
+        else {
+            frame_num = page_table[page_num].frame_num;
+        }
+
+        int physical_index = (frame_num * FRAME_SIZE_BYTES) + offset;
+        signed char value = (signed char)physical_memory[physical_index];
+
+        printf("logical=%d page=%d offset=%d frame=%d value=%d\n", addresses[i], page_num, offset, frame_num, value);
+
+    }
+
+    fclose(fp);
     free(addresses);
     free(physical_memory);
     free(frame_to_page);
@@ -171,21 +240,21 @@ int main(int argc, char *argv[]) {
  * Parse the file provided in command line argv[1]
  * 
  */
-int parse_file(const char *filename, int **addresses, size_t *address_count) {
+int parse_file(const char *filename, int **addresses, int *address_count) {
     FILE *fp = fopen(filename, "r");
-    size_t capacity = 128;
-    size_t count = 0;
+    int capacity = 128;
+    int count = 0;
     int *list = malloc(capacity * sizeof(*list));
     int logical_address;
 
     if (fp == NULL) {
-        perror("Could not open reference sequence file");
+        printf("Could not open reference sequence file");
         free(list);
         return 1;
     }
 
     if (list == NULL) {
-        perror("Could not allocate address list");
+        printf("Could not allocate address list");
         free(list);
         fclose(fp);
         return 1;
@@ -197,7 +266,7 @@ int parse_file(const char *filename, int **addresses, size_t *address_count) {
             int *resized_list = realloc(list, capacity * sizeof(*list));
 
             if (resized_list == NULL) {
-                perror("Could not expand address list");
+                printf("Could not expand address list");
                 free(list);
                 fclose(fp);
                 return 1;
@@ -214,7 +283,7 @@ int parse_file(const char *filename, int **addresses, size_t *address_count) {
       report an error and free list's memory.
     */
     if (!feof(fp)) {
-        fprintf(stderr, "Invalid address in reference sequence file: %s\n", filename);
+        printf("Invalid address in reference sequence file: %s\n", filename);
         free(list);
         fclose(fp);
         return 1;
