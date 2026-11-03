@@ -124,7 +124,7 @@ int main(int argc, char *argv[]) {
 
 
     
-
+    /*collect address list from txt file*/
     int * addresses;
     int num_addresses = 0;
     int parsing_status = parse_file(argv[1], &addresses, &num_addresses);
@@ -132,6 +132,8 @@ int main(int argc, char *argv[]) {
         printf("couldn't parse file\n");
         return 1;
     }
+
+    /*initialize page table, TLB, and physical memory*/
     struct page_entry page_table[PAGE_TABLE_ENTRIES];
     struct TLB_entry TLB[TLB_ENTRIES];
     unsigned char *physical_memory = malloc(FRAME_SIZE_BYTES*frame_count*sizeof(unsigned char));
@@ -140,6 +142,8 @@ int main(int argc, char *argv[]) {
         free(addresses);
         return 1;
     }
+
+    /*frame to page list, will help with updating page table when a frame gets evicted from memory*/
     int *frame_to_page = malloc(frame_count*sizeof(int)); //when we evict a frame, figure out the page
     if (frame_to_page == NULL){
         free(frame_to_page);
@@ -148,6 +152,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    /*more initialization stuff*/
     for (int i = 0; i < PAGE_TABLE_ENTRIES; i++){
         page_table[i].frame_num = -1;
         page_table[i].load_bit = 0;
@@ -161,7 +166,7 @@ int main(int argc, char *argv[]) {
         frame_to_page[i] = -1;
     }
 
-    //virtual memory startup
+    /*virtual memory startup*/
     FILE *fp = fopen("BACKING_STORE-1.bin", "rb");
     if (fp == NULL) {
         printf("Could not open backing store");
@@ -181,7 +186,7 @@ int main(int argc, char *argv[]) {
     int page_faults = 0;
 
 
-    //actual loop to find memory from addresses
+    /*actual loop to find memory from addresses*/
     for (int i = 0; i < num_addresses; i++){
         int page_num = addresses[i]/256;
         int offset = addresses[i]%256;
@@ -197,20 +202,23 @@ int main(int argc, char *argv[]) {
                 break;
             }
         }
+        /*if the TLB does not hit, look at the page table*/
         if (tlb_hit != 1){
             tlb_misses++;
             //page fault
             if (page_table[page_num].load_bit == 0){
+                /*physical memory is full, time for memory replacement algos*/
                 if (next_free_frame >= frame_count) {
                     printf("num frames exceeded\n");
                     fclose(fp);
                     free(addresses);
                     free(physical_memory);
-                        free(frame_to_page);
+                    free(frame_to_page);
                     return 1;
                 }
                 frame_num = next_free_frame;
 
+                /*look for data in backing store*/
                 if (fseek(fp, (long)page_num * PAGE_SIZE_BYTES, SEEK_SET) != 0) {
                     printf("Could not seek in backing store");
                     fclose(fp);
@@ -220,6 +228,7 @@ int main(int argc, char *argv[]) {
                     return 1;
                 }
 
+                /*reads backing store data into physical memory*/
                 size_t bytes_read = fread(physical_memory + (frame_num * FRAME_SIZE_BYTES), 1, PAGE_SIZE_BYTES, fp);
 
                 if (bytes_read != PAGE_SIZE_BYTES) {
@@ -231,6 +240,7 @@ int main(int argc, char *argv[]) {
                     return 1;
                 }
                 
+                /*page table is updated*/
                 page_table[page_num].load_bit = 1;
                 page_table[page_num].frame_num = frame_num;
                 frame_to_page[frame_num] = page_num;
@@ -241,6 +251,7 @@ int main(int argc, char *argv[]) {
             else {
                 frame_num = page_table[page_num].frame_num;
             }
+            /*after page table was checked/modified, modify next available tlb slot via fifo*/
             TLB[tlb_next_slot].valid = 1;
             TLB[tlb_next_slot].page_num = page_num;
             TLB[tlb_next_slot].frame_num = frame_num;
