@@ -207,7 +207,10 @@ int main(int argc, char *argv[]) {
             tlb_misses++;
             //page fault
             if (page_table[page_num].load_bit == 0){
-                /*physical memory is full, time for memory replacement algos*/
+                /*physical memory is full, 
+                 *check the PRA,
+                 *call the associated helper function to evict a frame and update page table.
+                 */
                 if (next_free_frame >= frame_count) {
                     printf("num frames exceeded\n");
                     fclose(fp);
