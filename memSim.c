@@ -73,6 +73,21 @@
  * Print out bytes as chars (%c).
  *
  */
+
+struct page_entry{
+    int load_bit; //1 = loaded
+    int frame_num;
+};
+
+struct TLB_entry{
+    int valid; //1 = valid
+    int page_num; 
+    int frame_num;
+};
+
+int parse_file(const char *filename, int **addresses, size_t *address_count);
+
+
 int main(int argc, char *argv[]) {
     if (argc < 2 || argc > 4) {
         printf("Usage: ./memSim <reference-sequence-file.txt> [frame_count] [PRA]\n");
@@ -113,9 +128,42 @@ int main(int argc, char *argv[]) {
     int * addresses;
     size_t num_addresses = 0;
     int parsing_status = parse_file(argv[1], &addresses, &num_addresses);
+    if (parsing_status != 0){
+        printf("couldn't parse file\n");
+        return 1;
+    }
+    struct page_entry page_table[PAGE_TABLE_ENTRIES];
+    struct TLB_entry TLB[TLB_ENTRIES];
+    unsigned char *physical_memory = malloc(FRAME_SIZE_BYTES*frame_count*sizeof(unsigned char));
+    if (physical_memory == NULL){
+        free(physical_memory);
+        free(addresses);
+        return 1;
+    }
+    int *frame_to_page = malloc(frame_count*sizeof(int)); //when we evict a frame, figure out the page
+    if (frame_to_page == NULL){
+        free(frame_to_page);
+        free(addresses);
+        free(physical_memory);
+        return 1;
+    }
 
+    for (int i = 0; i < PAGE_TABLE_ENTRIES; i++){
+        page_table[i].frame_num = -1;
+        page_table[i].load_bit = 0;
+    }
+    for (int i = 0; i < TLB_ENTRIES; i++){
+        TLB[i].frame_num = -1;
+        TLB[i].page_num = -1;
+        TLB[i].valid = 0;
+    }
+    for (int i = 0; i < frame_count; i++){
+        frame_to_page[i] = -1;
+    }
 
-
+    free(addresses);
+    free(physical_memory);
+    free(frame_to_page);
     return 0;
 }
 
@@ -132,11 +180,13 @@ int parse_file(const char *filename, int **addresses, size_t *address_count) {
 
     if (fp == NULL) {
         perror("Could not open reference sequence file");
+        free(list);
         return 1;
     }
 
     if (list == NULL) {
         perror("Could not allocate address list");
+        free(list);
         fclose(fp);
         return 1;
     }
