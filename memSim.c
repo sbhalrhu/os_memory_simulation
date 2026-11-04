@@ -88,6 +88,7 @@ struct TLB_entry{
 
 int parse_file(const char *filename, int **addresses, int *address_count);
 int pra_lru(const struct page_entry page_table[], int frame_count);
+int PRA_opt(const int *addresses, int current_index, int num_addresses, const struct page_entry *page_table);
 
 
 int main(int argc, char *argv[]) {
@@ -413,6 +414,27 @@ int parse_file(const char *filename, int **addresses, int *address_count) {
     *addresses = list;
     *address_count = count;
     return 0;
+}
+
+int PRA_opt(const int *addresses, int current_index, int num_addresses, const struct page_entry *page_table){
+    int furthest_page;
+    int furthest_page_distance = -1;
+    for (int i = 0; i < PAGE_TABLE_ENTRIES; i++){
+        int page_distance_count = 0;
+        if (page_table[i].load_bit == 1){
+            for (int b = current_index; b < num_addresses; b++){
+                if (addresses[b] / PAGE_SIZE_BYTES == i){
+                    break;
+                }
+                page_distance_count++;
+            }
+            if (page_distance_count > furthest_page_distance){
+                furthest_page_distance = page_distance_count;
+                furthest_page = i;
+            }
+        }
+    }
+    return page_table[furthest_page].frame_num;
 }
 
 
