@@ -77,6 +77,7 @@
 struct page_entry{
     int load_bit; //1 = loaded
     int frame_num;
+    unsigned long last_used; //access sequence number, used by LRU
 };
 
 struct TLB_entry{
@@ -86,6 +87,7 @@ struct TLB_entry{
 };
 
 int parse_file(const char *filename, int **addresses, int *address_count);
+int pra_lru(const struct page_entry page_table[], int frame_count);
 
 
 int main(int argc, char *argv[]) {
@@ -156,6 +158,7 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < PAGE_TABLE_ENTRIES; i++){
         page_table[i].frame_num = -1;
         page_table[i].load_bit = 0;
+        page_table[i].last_used = 0;
     }
     for (int i = 0; i < TLB_ENTRIES; i++){
         TLB[i].frame_num = -1;
@@ -184,6 +187,7 @@ int main(int argc, char *argv[]) {
 
     int next_free_frame = 0;
     int page_faults = 0;
+    unsigned long access_count = 0;
 
 
     /*actual loop to find memory from addresses*/
@@ -191,6 +195,11 @@ int main(int argc, char *argv[]) {
         int page_num = addresses[i]/256;
         int offset = addresses[i]%256;
         int frame_num;
+
+        /* Each time you translate an address, increment access count.
+        This is used to determine the least recently used page for the LRU PRA.
+        */
+        access_count++;
 
         int tlb_hit = 0; 
         //tlb check first
@@ -212,14 +221,68 @@ int main(int argc, char *argv[]) {
                  *call the associated helper function to evict a frame and update page table.
                  */
                 if (next_free_frame >= frame_count) {
-                    printf("num frames exceeded\n");
-                    fclose(fp);
-                    free(addresses);
-                    free(physical_memory);
-                    free(frame_to_page);
-                    return 1;
+
+
+                    //have FIFO case first since this is the default PRA.
+                    if (strcmp(pra, "fifo") == 0) {
+                        frame_num = next_free_frame % frame_count;
+                        int evicted_page = frame_to_page[frame_num];
+
+                        page_table[evicted_page].load_bit = 0;
+                        page_table[evicted_page].frame_num = -1;
+                        page_table[evicted_page].last_used = 0;
+
+                        /* unmap from TLB . */
+                        for (int b = 0; b < TLB_ENTRIES; b++) {
+                            if (TLB[b].valid && TLB[b].page_num == evicted_page) {
+                                TLB[b].valid = 0;
+                                TLB[b].page_num = -1;
+                                TLB[b].frame_num = -1;
+                            }
+                        }
+                    } 
+                    
+
+                    else if (strcmp(pra, "lru") == 0) {
+                        frame_num = pra_lru(page_table, frame_count);
+                        int evicted_page = frame_to_page[frame_num];
+
+                        page_table[evicted_page].load_bit = 0;
+                        page_table[evicted_page].frame_num = -1;
+                        page_table[evicted_page].last_used = 0;
+
+                        /* unmap from TLB . */
+                        for (int b = 0; b < TLB_ENTRIES; b++) {
+                            if (TLB[b].valid && TLB[b].page_num == evicted_page) {
+                                TLB[b].valid = 0;
+                                TLB[b].page_num = -1;
+                                TLB[b].frame_num = -1;
+                            }
+                        }
+                    } 
+                    
+
+
+                    //implement OPT here
+
+
+
+
+
+
+                    else {
+                        printf("num frames exceeded\n");
+                        fclose(fp);
+                        free(addresses);
+                        free(physical_memory);
+                        free(frame_to_page);
+                        return 1;
+                    }
+                } 
+                else {
+                    frame_num = next_free_frame;
+                    next_free_frame++;
                 }
-                frame_num = next_free_frame;
 
                 /*look for data in backing store*/
                 if (fseek(fp, (long)page_num * PAGE_SIZE_BYTES, SEEK_SET) != 0) {
@@ -246,9 +309,9 @@ int main(int argc, char *argv[]) {
                 /*page table is updated*/
                 page_table[page_num].load_bit = 1;
                 page_table[page_num].frame_num = frame_num;
+                page_table[page_num].last_used = access_count;
                 frame_to_page[frame_num] = page_num;
 
-                next_free_frame++;
                 page_faults++; 
             }
             else {
@@ -260,6 +323,7 @@ int main(int argc, char *argv[]) {
             TLB[tlb_next_slot].frame_num = frame_num;
             tlb_next_slot = (tlb_next_slot + 1) % TLB_ENTRIES;
         }
+        page_table[page_num].last_used = access_count;
         int physical_index = (frame_num * FRAME_SIZE_BYTES) + offset;
         signed char value = (signed char)physical_memory[physical_index];
 
@@ -331,6 +395,33 @@ int parse_file(const char *filename, int **addresses, int *address_count) {
     *addresses = list;
     *address_count = count;
     return 0;
+}
+
+
+/*
+ * Return the physical frame containing the least recently used loaded page.
+ * Tiebreaker is the order the pages sit in the page table.
+ */
+int pra_lru(const struct page_entry page_table[], int frame_count) {
+    int victim_frame = -1;
+    unsigned long oldest_use = 0;
+
+    for (int page = 0; page < PAGE_TABLE_ENTRIES; page++) {
+        if (!page_table[page].load_bit) {
+            continue;
+        }
+
+        if (victim_frame == -1 || page_table[page].last_used < oldest_use) {
+            victim_frame = page_table[page].frame_num;
+            oldest_use = page_table[page].last_used;
+        }
+    }
+
+    /* All frames are occupied when this is called, so a victim must exist. */
+    if (victim_frame < 0 || victim_frame >= frame_count) {
+        return -1;
+    }
+    return victim_frame;
 }
 
 
