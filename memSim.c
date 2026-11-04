@@ -198,7 +198,8 @@ int main(int argc, char *argv[]) {
         int offset = addresses[i]%256;
         int frame_num;
 
-        /* Each time you translate an address, increment access count.
+        /* Each time an address is translated, increment the access count.
+        Think of this as the position in the reference sequence.
         This is used to determine the least recently used page for the LRU PRA.
         */
         access_count++;
@@ -213,12 +214,12 @@ int main(int argc, char *argv[]) {
                 break;
             }
         }
-        /*if the TLB does not hit, look at the page table*/
+        /*if there is a TLB miss, look at the page table*/
         if (tlb_hit != 1){
             tlb_misses++;
             //page fault
             if (page_table[page_num].load_bit == 0){
-                /*physical memory is full, 
+                /*if physical memory is full, 
                  *check the PRA,
                  *call the associated helper function to evict a frame and update page table.
                  */
@@ -228,7 +229,7 @@ int main(int argc, char *argv[]) {
                     frames_loaded++;
                 } 
                 else{
-                    /* RAM is full: choose a victim frame. */
+                    /* phyiscal memory is full, so use a pra to find a victim */
                     if (strcmp(pra, "fifo") == 0) {
                         frame_num = fifo_victim;
                         fifo_victim = (fifo_victim + 1) % frame_count;
@@ -245,7 +246,7 @@ int main(int argc, char *argv[]) {
                         return 1;
                     }
 
-                    /* Remove the old page's mappings before overwriting its frame. */
+                    /* remove the old page's mappings before overwriting its frame */
                     int evicted_page = frame_to_page[frame_num];
 
                     page_table[evicted_page].load_bit = 0;
@@ -262,9 +263,9 @@ int main(int argc, char *argv[]) {
                     }
                 }
 
-                /*look for data in backing store*/
+                /*look for where data is in backing store*/
                 if (fseek(fp, (long)page_num * PAGE_SIZE_BYTES, SEEK_SET) != 0) {
-                    printf("Could not seek in backing store");
+                    printf("could not seek in backing store\n");
                     fclose(fp);
                     free(addresses);
                     free(physical_memory);
@@ -276,7 +277,7 @@ int main(int argc, char *argv[]) {
                 size_t bytes_read = fread(physical_memory + (frame_num * FRAME_SIZE_BYTES), 1, PAGE_SIZE_BYTES, fp);
 
                 if (bytes_read != PAGE_SIZE_BYTES) {
-                    printf("Could not read full page from backing store\n");
+                    printf("could not read full page from backing store\n");
                     fclose(fp);
                     free(addresses);
                     free(physical_memory);
@@ -313,18 +314,6 @@ int main(int argc, char *argv[]) {
 
     }
 
-
-
-/*    At the end, print: (no indentation)
-        Number of Translated Addresses = [count]
-        Page Faults = [count]
-        Page Fault Rate = [probability (max 1.000, should never reach 0)]
-        TLB Hits = [count]
-        TLB Misses = [count]
-        TLB Hit Rate = [probability (min 0.000, should never reach 1)]
-*/
-
-
     printf("Number of Translated Addresses = %d\n", num_addresses);
     printf("Page Faults = %d\n", page_faults);
     printf("Page Fault Rate = %.3f\n", (float)page_faults / num_addresses);
@@ -339,10 +328,6 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
-/* 
- * Parse the file provided in command line argv[1]
- * 
- */
 int parse_file(const char *filename, int **addresses, int *address_count) {
     FILE *fp = fopen(filename, "r");
     int capacity = 128;
@@ -351,13 +336,13 @@ int parse_file(const char *filename, int **addresses, int *address_count) {
     int logical_address;
 
     if (fp == NULL) {
-        printf("Could not open reference sequence file");
+        printf("Could not open reference sequence file\n");
         free(list);
         return 1;
     }
 
     if (list == NULL) {
-        printf("Could not allocate address list");
+        printf("Could not allocate address list\n");
         free(list);
         fclose(fp);
         return 1;
@@ -369,7 +354,7 @@ int parse_file(const char *filename, int **addresses, int *address_count) {
             int *resized_list = realloc(list, capacity * sizeof(*list));
 
             if (resized_list == NULL) {
-                printf("Could not expand address list");
+                printf("Could not expand address list\n");
                 free(list);
                 fclose(fp);
                 return 1;
@@ -382,11 +367,8 @@ int parse_file(const char *filename, int **addresses, int *address_count) {
         count++;
     }
 
-    /*If the while loop terminates before the end of the file is reached, 
-      report an error and free list's memory.
-    */
     if (!feof(fp)) {
-        printf("Invalid address in reference sequence file: %s\n", filename);
+        printf("Invalid address in reference sequence file\n");
         free(list);
         fclose(fp);
         return 1;
@@ -421,8 +403,8 @@ int PRA_opt(const int *addresses, int current_index, int num_addresses, const st
 
 
 /*
- * Return the physical frame containing the least recently used loaded page.
- * Tiebreaker is the order the pages sit in the page table.
+Return the physical frame containing the least recently used loaded page.
+Tiebreaker is the order the pages sit in the page table.
  */
 int pra_lru(const struct page_entry page_table[], int frame_count) {
     int victim_frame = -1;
@@ -445,28 +427,4 @@ int pra_lru(const struct page_entry page_table[], int frame_count) {
     }
     return victim_frame;
 }
-
-
-
-/* Function found online to 'dump a whole memory region on the screen'.
- 
-Source - https://stackoverflow.com/a/2566664
-Posted by quinmars
-Retrieved 2026-10-29, License - CC BY-SA 2.5
-
-
-void
-hexdump(const void *data, int size)
-{
-    const unsigned char *byte = data;
-
-    while (size > 0)
-    {
-        size--;
-        printf("%.2x ", *byte);
-        byte++;
-    }
-}
-
-*/
 
