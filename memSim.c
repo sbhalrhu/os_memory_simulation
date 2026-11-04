@@ -305,7 +305,11 @@ int main(int argc, char *argv[]) {
         int physical_index = (frame_num * FRAME_SIZE_BYTES) + offset;
         signed char value = (signed char)physical_memory[physical_index];
 
-        printf("logical=%d page=%d offset=%d frame=%d value=%d\n", addresses[i], page_num, offset, frame_num, value);
+        printf("%d, %d, %d, ", addresses[i], value, frame_num);
+        for (int byte = 0; byte < FRAME_SIZE_BYTES; byte++) {
+            printf("%02X", physical_memory[frame_num * FRAME_SIZE_BYTES + byte]);
+        }
+        printf("\n");
 
     }
 
@@ -319,6 +323,7 @@ int main(int argc, char *argv[]) {
         TLB Misses = [count]
         TLB Hit Rate = [probability (min 0.000, should never reach 1)]
 */
+
 
     printf("Number of Translated Addresses = %d\n", num_addresses);
     printf("Page Faults = %d\n", page_faults);
