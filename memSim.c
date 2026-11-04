@@ -186,7 +186,8 @@ int main(int argc, char *argv[]) {
 
 
 
-    int next_free_frame = 0;
+    int frames_loaded = 0;
+    int fifo_victim = 0;
     int page_faults = 0;
     unsigned long access_count = 0;
 
@@ -221,73 +222,22 @@ int main(int argc, char *argv[]) {
                  *check the PRA,
                  *call the associated helper function to evict a frame and update page table.
                  */
-                if (next_free_frame >= frame_count) {
-
-
-                    //have FIFO case first since this is the default PRA.
-                    if (strcmp(pra, "fifo") == 0) {
-                        frame_num = next_free_frame % frame_count;
-                        int evicted_page = frame_to_page[frame_num];
-
-                        page_table[evicted_page].load_bit = 0;
-                        page_table[evicted_page].frame_num = -1;
-                        page_table[evicted_page].last_used = 0;
-
-                        /* unmap from TLB . */
-                        for (int b = 0; b < TLB_ENTRIES; b++) {
-                            if (TLB[b].valid && TLB[b].page_num == evicted_page) {
-                                TLB[b].valid = 0;
-                                TLB[b].page_num = -1;
-                                TLB[b].frame_num = -1;
-                            }
-                        }
-                    } 
-                    
-
-                    else if (strcmp(pra, "lru") == 0) {
-                        frame_num = pra_lru(page_table, frame_count);
-                        int evicted_page = frame_to_page[frame_num];
-
-                        page_table[evicted_page].load_bit = 0;
-                        page_table[evicted_page].frame_num = -1;
-                        page_table[evicted_page].last_used = 0;
-
-                        /* unmap from TLB . */
-                        for (int b = 0; b < TLB_ENTRIES; b++) {
-                            if (TLB[b].valid && TLB[b].page_num == evicted_page) {
-                                TLB[b].valid = 0;
-                                TLB[b].page_num = -1;
-                                TLB[b].frame_num = -1;
-                            }
-                        }
-                    } 
-                    
-
-
-                    //implement OPT here
-
-
-
-
-
-
-                    else {
-                        printf("num frames exceeded\n");
-                        fclose(fp);
-                        free(addresses);
-                        free(physical_memory);
-                        free(frame_to_page);
-                        return 1;
-                    }
+                if (frames_loaded < frame_count) {
+                    /* There is still an unused physical frame. */
+                    frame_num = frames_loaded;
+                    frames_loaded++;
                 } 
-                else {
-                    frame_num = next_free_frame;
-                    next_free_frame++;
-                }
-
-                /*look for data in backing store*/
-                if (fseek(fp, (long)page_num * PAGE_SIZE_BYTES, SEEK_SET) != 0) {
-                    printf("Could not seek in backing store");
+            else{
+                /* RAM is full: choose a victim frame. */
+                if (strcmp(pra, "fifo") == 0) {
+                    frame_num = fifo_victim;
+                    fifo_victim = (fifo_victim + 1) % frame_count;
+                } else if (strcmp(pra, "lru") == 0) {
+                    frame_num = pra_lru(page_table, frame_count);
+                } else if (strcmp(pra, "opt") == 0) {
+                    frame_num = PRA_opt(addresses, i, num_addresses, page_table);
+                } else {
+                    fprintf(stderr, "Unknown page replacement algorithm\n");
                     fclose(fp);
                     free(addresses);
                     free(physical_memory);
@@ -295,34 +245,61 @@ int main(int argc, char *argv[]) {
                     return 1;
                 }
 
-                /*reads backing store data into physical memory*/
-                size_t bytes_read = fread(physical_memory + (frame_num * FRAME_SIZE_BYTES), 1, PAGE_SIZE_BYTES, fp);
+                /* Remove the old page's mappings before overwriting its frame. */
+                int evicted_page = frame_to_page[frame_num];
 
-                if (bytes_read != PAGE_SIZE_BYTES) {
-                    printf("Could not read full page from backing store\n");
-                    fclose(fp);
-                    free(addresses);
-                    free(physical_memory);
-                    free(frame_to_page);
-                    return 1;
+                page_table[evicted_page].load_bit = 0;
+                page_table[evicted_page].frame_num = -1;
+                page_table[evicted_page].last_used = 0;
+
+                for (int b = 0; b < TLB_ENTRIES; b++) {
+                    if (TLB[b].valid && TLB[b].page_num == evicted_page) {
+                        TLB[b].valid = 0;
+                        TLB[b].page_num = -1;
+                        TLB[b].frame_num = -1;
+                        break;
+                    }
                 }
-                
-                /*page table is updated*/
-                page_table[page_num].load_bit = 1;
-                page_table[page_num].frame_num = frame_num;
-                page_table[page_num].last_used = access_count;
-                frame_to_page[frame_num] = page_num;
+            }
 
-                page_faults++; 
+            /*look for data in backing store*/
+            if (fseek(fp, (long)page_num * PAGE_SIZE_BYTES, SEEK_SET) != 0) {
+                printf("Could not seek in backing store");
+                fclose(fp);
+                free(addresses);
+                free(physical_memory);
+                free(frame_to_page);
+                return 1;
             }
-            else {
-                frame_num = page_table[page_num].frame_num;
+
+            /*reads backing store data into physical memory*/
+            size_t bytes_read = fread(physical_memory + (frame_num * FRAME_SIZE_BYTES), 1, PAGE_SIZE_BYTES, fp);
+
+            if (bytes_read != PAGE_SIZE_BYTES) {
+                printf("Could not read full page from backing store\n");
+                fclose(fp);
+                free(addresses);
+                free(physical_memory);
+                free(frame_to_page);
+                return 1;
             }
-            /*after page table was checked/modified, modify next available tlb slot via fifo*/
-            TLB[tlb_next_slot].valid = 1;
-            TLB[tlb_next_slot].page_num = page_num;
-            TLB[tlb_next_slot].frame_num = frame_num;
-            tlb_next_slot = (tlb_next_slot + 1) % TLB_ENTRIES;
+            
+            /*page table is updated*/
+            page_table[page_num].load_bit = 1;
+            page_table[page_num].frame_num = frame_num;
+            page_table[page_num].last_used = access_count;
+            frame_to_page[frame_num] = page_num;
+
+            page_faults++; 
+        }
+        else {
+            frame_num = page_table[page_num].frame_num;
+        }
+        /*after page table was checked/modified, modify next available tlb slot via fifo*/
+        TLB[tlb_next_slot].valid = 1;
+        TLB[tlb_next_slot].page_num = page_num;
+        TLB[tlb_next_slot].frame_num = frame_num;
+        tlb_next_slot = (tlb_next_slot + 1) % TLB_ENTRIES;
         }
         page_table[page_num].last_used = access_count;
         int physical_index = (frame_num * FRAME_SIZE_BYTES) + offset;
@@ -422,7 +399,7 @@ int PRA_opt(const int *addresses, int current_index, int num_addresses, const st
     for (int i = 0; i < PAGE_TABLE_ENTRIES; i++){
         int page_distance_count = 0;
         if (page_table[i].load_bit == 1){
-            for (int b = current_index; b < num_addresses; b++){
+            for (int b = current_index + 1; b < num_addresses; b++){
                 if (addresses[b] / PAGE_SIZE_BYTES == i){
                     break;
                 }
