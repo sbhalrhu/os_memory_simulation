@@ -331,6 +331,24 @@ int main(int argc, char *argv[]) {
 
     }
 
+
+
+/*    At the end, print: (no indentation)
+        Number of Translated Addresses = [count]
+        Page Faults = [count]
+        Page Fault Rate = [probability (max 1.000, should never reach 0)]
+        TLB Hits = [count]
+        TLB Misses = [count]
+        TLB Hit Rate = [probability (min 0.000, should never reach 1)]
+*/
+
+    printf("Number of Translated Addresses = %d\n", num_addresses);
+    printf("Page Faults = %d\n", page_faults);
+    printf("Page Fault Rate = %.3f\n", (float)page_faults / num_addresses);
+    printf("TLB Hits = %d\n", tlb_hits);
+    printf("TLB Misses = %d\n", tlb_misses);
+    printf("TLB Hit Rate = %.3f\n", (float)tlb_hits / num_addresses);
+    
     fclose(fp);
     free(addresses);
     free(physical_memory);
